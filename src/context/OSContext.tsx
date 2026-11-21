@@ -269,15 +269,33 @@ export function OSProvider({ children }: { children: React.ReactNode }) {
     showToast("Demo workspace reset to fresh sample data", "success");
   }, [showToast]);
 
+  const formatAuthError = (e: unknown, fallback: string) => {
+    const code =
+      typeof e === "object" && e !== null && "code" in e
+        ? String((e as { code?: string }).code)
+        : "";
+    if (code === "auth/configuration-not-found") {
+      return "Firebase Authentication is not enabled yet for this project. Open Firebase Console → Authentication → click 'Get started', then enable Google and Email/Password under Sign-in method.";
+    }
+    if (code === "auth/operation-not-allowed") {
+      return "This sign-in provider is disabled. Enable Google (and Email/Password) in Firebase Console → Authentication → Sign-in method.";
+    }
+    if (code === "auth/unauthorized-domain") {
+      return "This domain is not authorized. Add localhost (or your domain) in Firebase Console → Authentication → Settings → Authorized domains.";
+    }
+    if (code === "auth/popup-closed-by-user") {
+      return "Sign-in popup was closed before completing.";
+    }
+    return e instanceof Error ? e.message : fallback;
+  };
+
   const loginWithEmail = useCallback(async (email: string, password: string) => {
     if (!auth) throw new Error("Firebase Authentication is not configured.");
     setAuthError(null);
     try {
       await signInWithEmailAndPassword(auth, email, password);
     } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : "Failed to sign in";
-      setAuthError(msg);
-      throw e;
+      setAuthError(formatAuthError(e, "Failed to sign in"));
     }
   }, []);
 
@@ -291,9 +309,7 @@ export function OSProvider({ children }: { children: React.ReactNode }) {
           await updateFirebaseProfile(cred.user, { displayName: name.trim() });
         }
       } catch (e: unknown) {
-        const msg = e instanceof Error ? e.message : "Failed to create account";
-        setAuthError(msg);
-        throw e;
+        setAuthError(formatAuthError(e, "Failed to create account"));
       }
     },
     []
@@ -306,9 +322,7 @@ export function OSProvider({ children }: { children: React.ReactNode }) {
       const provider = new GoogleAuthProvider();
       await signInWithPopup(auth, provider);
     } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : "Google sign-in failed";
-      setAuthError(msg);
-      throw e;
+      setAuthError(formatAuthError(e, "Google sign-in failed"));
     }
   }, []);
 
