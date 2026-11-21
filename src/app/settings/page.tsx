@@ -9,10 +9,12 @@ import {
   RotateCcw,
   Save,
   Shield,
+  Smartphone,
   Sparkles,
   Trash2,
 } from "lucide-react";
 import { useOS } from "@/context/OSContext";
+import { usePWA } from "@/components/pwa/PWARegister";
 import {
   Badge,
   Button,
@@ -52,6 +54,7 @@ export default function SettingsPage() {
   const [prefs, setPrefs] = useState<UserPreferences>(data.preferences);
   const [aiStatus, setAiStatus] = useState<AIStatusInfo | null>(null);
   const [confirmWipe, setConfirmWipe] = useState(false);
+  const { canInstall, isInstalled, isIOS, triggerInstall } = usePWA();
 
   useEffect(() => {
     setName(data.profile.name);
@@ -406,6 +409,41 @@ export default function SettingsPage() {
           </Button>
         </div>
       </form>
+
+      {/* Mobile App (PWA) Installation */}
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between gap-2">
+          <div>
+            <CardTitle className="flex items-center gap-2">
+              <Smartphone className="h-4 w-4 text-[var(--accent)]" />
+              Mobile App Installation
+            </CardTitle>
+            <CardDescription>
+              Install PERSONAL OS on your phone home screen for full-screen native behavior
+            </CardDescription>
+          </div>
+          <Badge tone={isInstalled ? "success" : canInstall ? "accent" : "neutral"}>
+            {isInstalled ? "Installed" : canInstall ? "Ready to Install" : "Browser Mode"}
+          </Badge>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {isInstalled ? (
+            <p className="text-xs text-[var(--text-secondary)]">
+              You are running PERSONAL OS in standalone app mode.
+            </p>
+          ) : canInstall ? (
+            <Button onClick={() => void triggerInstall()}>
+              <Download className="h-4 w-4" />
+              {isIOS ? "Show iPhone Install Steps" : "Install Personal OS App"}
+            </Button>
+          ) : (
+            <p className="text-xs text-[var(--text-secondary)] leading-relaxed">
+              Open this app on your phone over HTTPS (or localhost) in Chrome (Android) or Safari
+              (iPhone) to install it directly to your home screen.
+            </p>
+          )}
+        </CardContent>
+      </Card>
 
       {/* Account, Firebase & Data Ownership */}
       <Card>

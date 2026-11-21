@@ -9,6 +9,7 @@ import {
   CalendarDays,
   CheckSquare,
   Compass,
+  Download,
   Flame,
   LayoutDashboard,
   LogOut,
@@ -26,6 +27,7 @@ import {
   X,
 } from "lucide-react";
 import { useOS } from "@/context/OSContext";
+import { usePWA } from "@/components/pwa/PWARegister";
 import { cn } from "@/lib/utils";
 import { AuthGate } from "./AuthGate";
 import { QuickCaptureModal } from "@/components/ai/QuickCaptureModal";
@@ -72,6 +74,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   const [collapsed, setCollapsed] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const { canInstall, triggerInstall } = usePWA();
 
   if (isLoading) {
     return (
@@ -194,7 +197,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       {/* Main Column */}
       <div className="flex-1 flex flex-col min-w-0">
         {/* Top Bar */}
-        <header className="sticky top-0 z-30 h-14 border-b border-[var(--border)] bg-[var(--bg)]/85 backdrop-blur-md px-4 lg:px-8 flex items-center justify-between gap-3">
+        <header className="sticky top-0 z-30 min-h-14 safe-top border-b border-[var(--border)] bg-[var(--bg)]/85 backdrop-blur-md px-4 lg:px-8 flex items-center justify-between gap-3">
           <div className="flex items-center gap-2.5">
             <button
               onClick={() => setMobileMenuOpen(true)}
@@ -220,6 +223,19 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </div>
 
           <div className="flex items-center gap-2">
+            {/* Install App CTA when installable */}
+            {canInstall && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => void triggerInstall()}
+                title="Install Personal OS on your device"
+              >
+                <Download className="h-3.5 w-3.5 text-[var(--accent)]" />
+                <span className="hidden md:inline">Install App</span>
+              </Button>
+            )}
+
             {/* Global Quick Capture */}
             <Button
               variant="outline"
@@ -353,7 +369,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       )}
 
       {/* Mobile Bottom Navigation */}
-      <nav className="lg:hidden fixed bottom-0 inset-x-0 z-30 border-t border-[var(--border)] bg-[var(--surface)]/95 backdrop-blur-md px-2 py-1.5 flex items-center justify-around">
+      <nav className="lg:hidden fixed bottom-0 inset-x-0 z-30 border-t border-[var(--border)] bg-[var(--surface)]/95 backdrop-blur-md px-2 pt-1.5 safe-bottom flex items-center justify-around">
         {MOBILE_BOTTOM_NAV.map((item) => {
           const Icon = item.icon;
           const active =
@@ -365,11 +381,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               key={item.href}
               href={item.href}
               className={cn(
-                "flex flex-col items-center gap-0.5 px-3 py-1 rounded-lg text-[10px] font-medium",
-                active ? "text-[var(--accent)]" : "text-[var(--text-secondary)]"
+                "flex flex-col items-center justify-center gap-0.5 min-w-[56px] min-h-[44px] px-2 py-1 rounded-xl text-[10px] font-medium transition-colors active:scale-95",
+                active
+                  ? "text-[var(--accent)] bg-[var(--accent-soft)]/50"
+                  : "text-[var(--text-secondary)]"
               )}
             >
-              <Icon className="h-4 w-4" />
+              <Icon className="h-4.5 w-4.5" />
               <span>{item.label}</span>
             </Link>
           );
