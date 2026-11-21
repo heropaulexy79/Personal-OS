@@ -8,6 +8,7 @@ import {
   Check,
   CheckCircle2,
   Circle,
+  Edit3,
   FolderKanban,
   Loader2,
   Plus,
@@ -29,6 +30,7 @@ import {
   PriorityBadge,
   ProgressBar,
   Select,
+  Textarea,
 } from "@/components/ui/primitives";
 import type { GoalStatus, Priority } from "@/types";
 
@@ -55,6 +57,7 @@ export default function GoalDetailPage() {
     updateMilestone,
     deleteMilestone,
     createProject,
+    deleteProject,
     createTask,
     toggleTaskComplete,
     showToast,
@@ -83,6 +86,15 @@ export default function GoalDetailPage() {
   const [newMsTitle, setNewMsTitle] = useState("");
   const [newTaskTitle, setNewTaskTitle] = useState("");
   const [newProjectTitle, setNewProjectTitle] = useState("");
+
+  // Edit Goal state
+  const [editModalOpen, setEditModalOpen] = useState(false);
+  const [editTitle, setEditTitle] = useState("");
+  const [editDesc, setEditDesc] = useState("");
+  const [editWhy, setEditWhy] = useState("");
+  const [editCategory, setEditCategory] = useState("");
+  const [editPriority, setEditPriority] = useState<Priority>("high");
+  const [editTargetDate, setEditTargetDate] = useState("");
 
   // AI Breakdown state
   const [aiLoading, setAiLoading] = useState(false);
@@ -247,6 +259,22 @@ export default function GoalDetailPage() {
         </Link>
 
         <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              setEditTitle(goal.title);
+              setEditDesc(goal.description);
+              setEditWhy(goal.whyItMatters || "");
+              setEditCategory(goal.category);
+              setEditPriority(goal.priority);
+              setEditTargetDate(goal.targetDate);
+              setEditModalOpen(true);
+            }}
+          >
+            <Edit3 className="h-3.5 w-3.5" />
+            Edit Goal
+          </Button>
           <Button onClick={() => void handleRunAIBreakdown()} disabled={aiLoading}>
             <Sparkles className="h-4 w-4" />
             Break Down Goal with AI
@@ -441,9 +469,16 @@ export default function GoalDetailPage() {
               {projects.map((p) => (
                 <div
                   key={p.id}
-                  className="rounded-xl border border-[var(--border)] bg-[var(--bg)]/50 px-3 py-2 text-xs font-medium"
+                  className="flex items-center justify-between gap-2 rounded-xl border border-[var(--border)] bg-[var(--bg)]/50 px-3 py-2 text-xs font-medium"
                 >
-                  {p.title}
+                  <span className="truncate">{p.title}</span>
+                  <button
+                    onClick={() => deleteProject(p.id)}
+                    className="text-[var(--text-muted)] hover:text-[var(--danger)] cursor-pointer shrink-0"
+                    title="Remove project"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
                 </div>
               ))}
               <form onSubmit={handleAddProject} className="flex gap-2 pt-1">
@@ -461,6 +496,95 @@ export default function GoalDetailPage() {
           </Card>
         </div>
       </div>
+
+      {/* Edit Goal Modal */}
+      <Modal
+        open={editModalOpen}
+        onClose={() => setEditModalOpen(false)}
+        title="Edit Goal"
+      >
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (!editTitle.trim()) return;
+            updateGoal(goal.id, {
+              title: editTitle.trim(),
+              description: editDesc.trim(),
+              whyItMatters: editWhy.trim() || undefined,
+              category: editCategory,
+              priority: editPriority,
+              targetDate: editTargetDate,
+            });
+            setEditModalOpen(false);
+            showToast("Goal updated", "success");
+          }}
+          className="space-y-4"
+        >
+          <div>
+            <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1">
+              Goal Title
+            </label>
+            <Input value={editTitle} onChange={(e) => setEditTitle(e.target.value)} required />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1">
+              Description
+            </label>
+            <Textarea rows={3} value={editDesc} onChange={(e) => setEditDesc(e.target.value)} />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1">
+              Why This Matters
+            </label>
+            <Input value={editWhy} onChange={(e) => setEditWhy(e.target.value)} />
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1">
+                Life Area
+              </label>
+              <Select value={editCategory} onChange={(e) => setEditCategory(e.target.value)}>
+                {data.vision.lifeAreas.map((a) => (
+                  <option key={a.id} value={a.name}>
+                    {a.name}
+                  </option>
+                ))}
+              </Select>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1">
+                Priority
+              </label>
+              <Select
+                value={editPriority}
+                onChange={(e) => setEditPriority(e.target.value as Priority)}
+              >
+                <option value="low">Low</option>
+                <option value="medium">Medium</option>
+                <option value="high">High</option>
+                <option value="urgent">Urgent</option>
+              </Select>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1">
+                Target Date
+              </label>
+              <Input
+                type="date"
+                value={editTargetDate}
+                onChange={(e) => setEditTargetDate(e.target.value)}
+                required
+              />
+            </div>
+          </div>
+          <div className="flex justify-end gap-2 pt-2">
+            <Button type="button" variant="ghost" onClick={() => setEditModalOpen(false)}>
+              Cancel
+            </Button>
+            <Button type="submit">Save Changes</Button>
+          </div>
+        </form>
+      </Modal>
 
       {/* AI Goal Breakdown Review Modal */}
       <Modal

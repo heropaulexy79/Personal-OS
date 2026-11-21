@@ -5,9 +5,11 @@ import { format, subDays } from "date-fns";
 import {
   BookOpen,
   CalendarRange,
+  Edit3,
   Loader2,
   Plus,
   Save,
+  Search,
   Sparkles,
   Trash2,
 } from "lucide-react";
@@ -23,10 +25,11 @@ import {
   CardTitle,
   EmptyState,
   Input,
+  Modal,
   Select,
   Textarea,
 } from "@/components/ui/primitives";
-import type { DailyReflectionPrompts, JournalType } from "@/types";
+import type { DailyReflectionPrompts, JournalEntry, JournalType } from "@/types";
 
 const EMPTY_PROMPTS: DailyReflectionPrompts = {
   accomplished: "",
@@ -41,8 +44,11 @@ export default function JournalPage() {
   const {
     data,
     createJournalEntry,
+    updateJournalEntry,
     deleteJournalEntry,
     saveWeeklyReview,
+    updateWeeklyReview,
+    deleteWeeklyReview,
     showToast,
   } = useOS();
 
@@ -59,8 +65,13 @@ export default function JournalPage() {
   const [entryTitle, setEntryTitle] = useState("");
   const [entryContent, setEntryContent] = useState("");
   const [archiveFilter, setArchiveFilter] = useState<JournalType | "all">("all");
+  const [archiveSearch, setArchiveSearch] = useState("");
+  const [editingEntry, setEditingEntry] = useState<JournalEntry | null>(null);
+  const [editEntryTitle, setEditEntryTitle] = useState("");
+  const [editEntryContent, setEditEntryContent] = useState("");
 
   // Weekly Review state
+  const [editingReviewId, setEditingReviewId] = useState<string | null>(null);
   const [generatingReview, setGeneratingReview] = useState(false);
   const [reviewMode, setReviewMode] = useState<"groq" | "mock" | null>(null);
   const [draftSummary, setDraftSummary] = useState("");
@@ -186,31 +197,45 @@ export default function JournalPage() {
 
   const handleSaveWeeklyReview = () => {
     if (!draftSummary.trim()) return;
-    saveWeeklyReview({
-      weekStart,
-      weekEnd,
-      summary: draftSummary.trim(),
-      goalsProgressed: data.goals
-        .filter((g) => g.status === "active")
-        .map((g) => `${g.title} (${g.progress}%)`),
-      tasksCompletedCount: weekMetrics.completed.length,
-      tasksDeferredCount: weekMetrics.deferred.length,
-      habitConsistencyPct: weekMetrics.habitPct,
-      focusHours: weekMetrics.focusHours,
-      accomplishments: draftAccomplishments
-        .split("\n")
-        .map((s) => s.trim())
-        .filter(Boolean),
-      areasNeedingAttention: draftAttention
-        .split("\n")
-        .map((s) => s.trim())
-        .filter(Boolean),
-      nextWeekAdjustments: draftAdjustments
-        .split("\n")
-        .map((s) => s.trim())
-        .filter(Boolean),
-      aiGenerated: Boolean(reviewMode),
-    });
+    const accomplishments = draftAccomplishments
+      .split("\n")
+      .map((s) => s.trim())
+      .filter(Boolean);
+    const areasNeedingAttention = draftAttention
+      .split("\n")
+      .map((s) => s.trim())
+      .filter(Boolean);
+    const nextWeekAdjustments = draftAdjustments
+      .split("\n")
+      .map((s) => s.trim())
+      .filter(Boolean);
+
+    if (editingReviewId) {
+      updateWeeklyReview(editingReviewId, {
+        summary: draftSummary.trim(),
+        accomplishments,
+        areasNeedingAttention,
+        nextWeekAdjustments,
+      });
+      setEditingReviewId(null);
+    } else {
+      saveWeeklyReview({
+        weekStart,
+        weekEnd,
+        summary: draftSummary.trim(),
+        goalsProgressed: data.goals
+          .filter((g) => g.status === "active")
+          .map((g) => `${g.title} (${g.progress}%)`),
+        tasksCompletedCount: weekMetrics.completed.length,
+        tasksDeferredCount: weekMetrics.deferred.length,
+        habitConsistencyPct: weekMetrics.habitPct,
+        focusHours: weekMetrics.focusHours,
+        accomplishments,
+        areasNeedingAttention,
+        nextWeekAdjustments,
+        aiGenerated: Boolean(reviewMode),
+      });
+    }
     setDraftSummary("");
     setDraftAccomplishments("");
     setDraftAttention("");
@@ -218,9 +243,18 @@ export default function JournalPage() {
     setReviewMode(null);
   };
 
-  const filteredEntries = data.journalEntries.filter(
-    (j) => archiveFilter === "all" || j.type === archiveFilter
-  );
+  const filteredEntries = data.journalEntries.filter((j) => {
+    if (archiveFilter !== "all" && j.type !== archiveFilter) return false;
+    if (archiveSearch.trim()) {
+      const q = archiveSearch.toLowerCase();
+      return (
+        j.title.toLowerCase().includes(q) ||
+        j.content.toLowerCase().includes(q) ||
+        j.tags.some((t) => t.toLowerCase().includes(q))
+      );
+    }
+    return true;
+  });
 
   return (
     <div className="space-y-6">
@@ -448,7 +482,30 @@ export default function JournalPage() {
                       {wr.habitConsistencyPct}% routines
                     </p>
                   </div>
-                  {wr.aiGenerated && <Badge tone="accent">AI Assisted</Badge>}
+                  <div className="flex items-center gap-2">
+                    {wr.aiGenerated && <Badge tone="accent">AI Assisted</Badge>}
+                    <button
+                      onClick={() => {
+                        setEditingReviewId(wr.id);
+                        setDraftSummary(wr.summary);
+                        setDraftAccomplishments(wr.accomplishments.join("\n"));
+                        setDraftAttention(wr.areasNeedingAttention.join("\n"));
+                        setDraftAdjustments(wr.nextWeekAdjustments.join("\n"));
+                        window.scrollTo({ top: 0, behavior: "smooth" });
+                      }}
+                      className="p-1 text-[var(--text-muted)] hover:text-[var(--accent)] cursor-pointer"
+                      title="Edit weekly review"
+                    >
+                      <Edit3 className="h-3.5 w-3.5" />
+                    </button>
+                    <button
+                      onClick={() => deleteWeeklyReview(wr.id)}
+                      className="p-1 text-[var(--text-muted)] hover:text-[var(--danger)] cursor-pointer"
+                      title="Delete weekly review"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
                 </div>
                 <p className="text-sm text-[var(--text-primary)] leading-relaxed">{wr.summary}</p>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-2 text-xs">
@@ -519,10 +576,16 @@ export default function JournalPage() {
           </Card>
 
           <div className="lg:col-span-7 space-y-4">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-medium text-[var(--text-secondary)]">
-                {filteredEntries.length} entries
-              </span>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="relative flex-1 min-w-[180px]">
+                <Search className="h-3.5 w-3.5 text-[var(--text-muted)] absolute left-3 top-1/2 -translate-y-1/2" />
+                <Input
+                  value={archiveSearch}
+                  onChange={(e) => setArchiveSearch(e.target.value)}
+                  placeholder="Search entries..."
+                  className="h-8 pl-8 text-xs"
+                />
+              </div>
               <Select
                 value={archiveFilter}
                 onChange={(e) => setArchiveFilter(e.target.value as JournalType | "all")}
@@ -556,12 +619,26 @@ export default function JournalPage() {
                       </div>
                       <h3 className="mt-2 text-base font-semibold">{entry.title}</h3>
                     </div>
-                    <button
-                      onClick={() => deleteJournalEntry(entry.id)}
-                      className="p-1 text-[var(--text-muted)] hover:text-[var(--danger)] cursor-pointer"
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </button>
+                    <div className="flex items-center gap-1">
+                      <button
+                        onClick={() => {
+                          setEditingEntry(entry);
+                          setEditEntryTitle(entry.title);
+                          setEditEntryContent(entry.content);
+                        }}
+                        className="p-1 text-[var(--text-muted)] hover:text-[var(--accent)] cursor-pointer"
+                        title="Edit entry"
+                      >
+                        <Edit3 className="h-3.5 w-3.5" />
+                      </button>
+                      <button
+                        onClick={() => deleteJournalEntry(entry.id)}
+                        className="p-1 text-[var(--text-muted)] hover:text-[var(--danger)] cursor-pointer"
+                        title="Delete entry"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
                   </div>
                   <p className="mt-2 text-sm text-[var(--text-secondary)] leading-relaxed whitespace-pre-wrap">
                     {entry.content}
@@ -588,6 +665,55 @@ export default function JournalPage() {
           </div>
         </div>
       )}
+
+      {/* Edit Journal Entry Modal */}
+      <Modal
+        open={Boolean(editingEntry)}
+        onClose={() => setEditingEntry(null)}
+        title="Edit Journal Entry"
+      >
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (!editingEntry || !editEntryTitle.trim()) return;
+            updateJournalEntry(editingEntry.id, {
+              title: editEntryTitle.trim(),
+              content: editEntryContent.trim(),
+            });
+            setEditingEntry(null);
+            showToast("Journal entry updated", "success");
+          }}
+          className="space-y-4"
+        >
+          <div>
+            <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1">
+              Title
+            </label>
+            <Input
+              value={editEntryTitle}
+              onChange={(e) => setEditEntryTitle(e.target.value)}
+              required
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1">
+              Content
+            </label>
+            <Textarea
+              rows={6}
+              value={editEntryContent}
+              onChange={(e) => setEditEntryContent(e.target.value)}
+              required
+            />
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button type="button" variant="ghost" onClick={() => setEditingEntry(null)}>
+              Cancel
+            </Button>
+            <Button type="submit">Save Changes</Button>
+          </div>
+        </form>
+      </Modal>
     </div>
   );
 }

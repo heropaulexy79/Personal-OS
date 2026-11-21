@@ -1,13 +1,17 @@
 "use client";
 
-import React from "react";
-import { Compass, Flame, Target, Timer } from "lucide-react";
+import React, { useState } from "react";
+import { Compass, Flame, MessageSquare, Plus, Target, Timer, Trash2 } from "lucide-react";
 import { useOS } from "@/context/OSContext";
+import { uid } from "@/lib/utils";
 import { AssistantPanel } from "@/components/ai/AssistantPanel";
-import { Card } from "@/components/ui/primitives";
+import { Button, Card } from "@/components/ui/primitives";
 
 export default function AssistantPage() {
-  const { data } = useOS();
+  const { data, deleteConversation } = useOS();
+  const [selectedConvId, setSelectedConvId] = useState<string>(
+    () => data.aiConversations[0]?.id || uid("conv")
+  );
 
   const activeGoals = data.goals.filter((g) => g.status === "active").length;
   const openTasks = data.tasks.filter((t) => t.status !== "done").length;
@@ -26,17 +30,72 @@ export default function AssistantPage() {
           AI Assistant
         </h1>
         <p className="text-sm text-[var(--text-secondary)] mt-0.5">
-          Strategic guidance grounded in your live vision, goals, tasks, habits, and reflections.
+          Strategic guidance grounded in your live vision, goals, projects, schedule, tasks, habits, and reflections.
         </p>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
-        {/* Context Snapshot Sidebar */}
+        {/* Context & Conversation History Sidebar */}
         <div className="lg:col-span-4 space-y-4">
+          <Card className="p-4">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2 text-xs font-semibold text-[var(--text-primary)]">
+                <MessageSquare className="h-3.5 w-3.5 text-[var(--accent)]" />
+                <span>Conversations</span>
+              </div>
+              <Button
+                size="xs"
+                variant="outline"
+                onClick={() => setSelectedConvId(uid("conv"))}
+              >
+                <Plus className="h-3 w-3" />
+                New
+              </Button>
+            </div>
+            <div className="space-y-1 max-h-48 overflow-y-auto">
+              {data.aiConversations.length === 0 ? (
+                <p className="text-xs text-[var(--text-muted)] py-2">
+                  Start typing to save your first conversation.
+                </p>
+              ) : (
+                data.aiConversations.map((c) => (
+                  <div
+                    key={c.id}
+                    className={`flex items-center justify-between gap-2 rounded-lg px-2.5 py-2 text-xs transition-colors ${
+                      selectedConvId === c.id
+                        ? "bg-[var(--accent-soft)] text-[var(--accent)] font-medium"
+                        : "text-[var(--text-secondary)] hover:bg-[var(--surface-subtle)]"
+                    }`}
+                  >
+                    <button
+                      onClick={() => setSelectedConvId(c.id)}
+                      className="truncate text-left flex-1 cursor-pointer"
+                    >
+                      {c.title}
+                    </button>
+                    <button
+                      onClick={() => {
+                        deleteConversation(c.id);
+                        if (selectedConvId === c.id) {
+                          const next = data.aiConversations.find((x) => x.id !== c.id);
+                          setSelectedConvId(next?.id || uid("conv"));
+                        }
+                      }}
+                      className="text-[var(--text-muted)] hover:text-[var(--danger)] cursor-pointer shrink-0"
+                      title="Delete thread"
+                    >
+                      <Trash2 className="h-3 w-3" />
+                    </button>
+                  </div>
+                ))
+              )}
+            </div>
+          </Card>
+
           <Card className="p-5">
             <div className="flex items-center gap-2 text-xs font-semibold text-[var(--accent)] mb-2">
               <Compass className="h-4 w-4" />
-              <span>Loaded Context</span>
+              <span>Loaded Live Context</span>
             </div>
             <p className="text-xs text-[var(--text-secondary)] leading-relaxed">
               {data.vision.northStar ||
@@ -86,10 +145,12 @@ export default function AssistantPage() {
 
         {/* Full Chat Panel */}
         <Card className="lg:col-span-8 h-[680px] overflow-hidden flex flex-col">
-          <AssistantPanel />
+          <AssistantPanel
+            selectedConvId={selectedConvId}
+            onSelectConvId={setSelectedConvId}
+          />
         </Card>
       </div>
     </div>
   );
 }
-

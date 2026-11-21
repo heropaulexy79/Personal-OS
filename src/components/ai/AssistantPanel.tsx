@@ -16,12 +16,53 @@ const QUICK_PROMPTS = [
   "Help me reflect on my week.",
 ];
 
-export function AssistantPanel({ compact = false }: { compact?: boolean }) {
+function renderFormattedText(text: string) {
+  return text.split("\n").map((line, lineIdx) => {
+    const parts = line.split(/(\*\*[^*]+\*\*|\*[^*]+\*)/g);
+    const rendered = parts.map((part, i) => {
+      if (part.startsWith("**") && part.endsWith("**")) {
+        return (
+          <strong key={i} className="font-semibold">
+            {part.slice(2, -2)}
+          </strong>
+        );
+      }
+      if (part.startsWith("*") && part.endsWith("*")) {
+        return (
+          <em key={i} className="italic">
+            {part.slice(1, -1)}
+          </em>
+        );
+      }
+      return <React.Fragment key={i}>{part}</React.Fragment>;
+    });
+    return (
+      <div key={lineIdx} className={line.trim() === "" ? "h-2" : ""}>
+        {rendered}
+      </div>
+    );
+  });
+}
+
+export function AssistantPanel({
+  compact = false,
+  selectedConvId,
+  onSelectConvId,
+}: {
+  compact?: boolean;
+  selectedConvId?: string;
+  onSelectConvId?: (id: string) => void;
+}) {
   const { data, saveConversation, applyProposedAction } = useOS();
 
-  const [activeConvId, setActiveConvId] = useState<string>(
+  const [internalConvId, setInternalConvId] = useState<string>(
     () => data.aiConversations[0]?.id || uid("conv")
   );
+  const activeConvId = selectedConvId || internalConvId;
+  const setActiveConvId = (id: string) => {
+    setInternalConvId(id);
+    onSelectConvId?.(id);
+  };
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const [aiStatus, setAiStatus] = useState<{ configured: boolean; defaultModel: string } | null>(
@@ -116,6 +157,19 @@ export function AssistantPanel({ compact = false }: { compact?: boolean }) {
       focusMinutesLast7Days,
       recentJournalTitles: data.journalEntries.slice(0, 4).map((j) => `${j.date}: ${j.title}`),
       maxDailyWorkloadHours: data.preferences.maxDailyWorkloadHours,
+      projects: data.projects
+        .filter((p) => p.status === "active")
+        .map((p) => ({ id: p.id, title: p.title, category: p.category })),
+      todayTimeBlocks: data.timeBlocks
+        .filter((b) => b.date === today)
+        .sort((a, b) => a.startTime.localeCompare(b.startTime))
+        .map((b) => ({
+          title: b.title,
+          startTime: b.startTime,
+          endTime: b.endTime,
+          type: b.type,
+          completed: b.completed,
+        })),
     };
   };
 
@@ -130,8 +184,14 @@ export function AssistantPanel({ compact = false }: { compact?: boolean }) {
       timestamp: new Date().toISOString(),
     };
 
+    const autoTitle =
+      conversation.messages.filter((m) => m.role === "user").length === 0
+        ? trimmed.slice(0, 42) + (trimmed.length > 42 ? "…" : "")
+        : conversation.title;
+
     const updatedWithUser: AIConversation = {
       ...conversation,
+      title: autoTitle,
       messages: [...conversation.messages, userMsg],
       updatedAt: new Date().toISOString(),
     };
@@ -265,7 +325,7 @@ export function AssistantPanel({ compact = false }: { compact?: boolean }) {
                   : "bg-[var(--surface-subtle)] text-[var(--text-primary)] border border-[var(--border)]"
               }`}
             >
-              {msg.content}
+              {renderFormattedText(msg.content)}
               {msg.role === "assistant" && msg.mode && (
                 <div className="mt-2 flex items-center gap-1.5 text-[10px] text-[var(--text-muted)]">
                   <span>{msg.mode === "groq" ? "Powered by Groq" : "Mock AI (add GROQ_API_KEY for live Groq)"}</span>

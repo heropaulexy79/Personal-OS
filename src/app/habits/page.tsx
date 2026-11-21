@@ -5,6 +5,7 @@ import { format, subDays } from "date-fns";
 import {
   Archive,
   Check,
+  Edit3,
   Flame,
   Pause,
   Play,
@@ -36,12 +37,33 @@ export default function HabitsPage() {
   const today = todayISO();
   const [range, setRange] = useState<"week" | "month">("week");
   const [modalOpen, setModalOpen] = useState(false);
+  const [editingHabit, setEditingHabit] = useState<Habit | null>(null);
 
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [category, setCategory] = useState("Spiritual Growth");
   const [frequency, setFrequency] = useState<HabitFrequency>("daily");
   const [reminderTime, setReminderTime] = useState("07:00");
+
+  const openCreateModal = () => {
+    setEditingHabit(null);
+    setTitle("");
+    setDescription("");
+    setCategory(data.vision.lifeAreas[0]?.name || "Spiritual Growth");
+    setFrequency("daily");
+    setReminderTime("07:00");
+    setModalOpen(true);
+  };
+
+  const openEditModal = (h: Habit) => {
+    setEditingHabit(h);
+    setTitle(h.title);
+    setDescription(h.description || "");
+    setCategory(h.category);
+    setFrequency(h.frequency);
+    setReminderTime(h.reminderTime || "");
+    setModalOpen(true);
+  };
 
   const dates = useMemo(() => {
     const count = range === "week" ? 7 : 28;
@@ -81,7 +103,7 @@ export default function HabitsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeHabits, data.habitEntries]);
 
-  const handleCreate = (e: React.FormEvent) => {
+  const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
     if (!title.trim()) return;
     const targetMap: Record<HabitFrequency, number> = {
@@ -91,17 +113,30 @@ export default function HabitsPage() {
       "3x_week": 3,
       weekly: 1,
     };
-    createHabit({
-      title: title.trim(),
-      description: description.trim() || undefined,
-      category,
-      frequency,
-      reminderTime: reminderTime || undefined,
-      status: "active",
-      targetPerWeek: targetMap[frequency],
-    });
+    if (editingHabit) {
+      updateHabit(editingHabit.id, {
+        title: title.trim(),
+        description: description.trim() || undefined,
+        category,
+        frequency,
+        reminderTime: reminderTime || undefined,
+        targetPerWeek: targetMap[frequency],
+      });
+      showToast("Habit updated", "success");
+    } else {
+      createHabit({
+        title: title.trim(),
+        description: description.trim() || undefined,
+        category,
+        frequency,
+        reminderTime: reminderTime || undefined,
+        status: "active",
+        targetPerWeek: targetMap[frequency],
+      });
+    }
     setTitle("");
     setDescription("");
+    setEditingHabit(null);
     setModalOpen(false);
   };
 
@@ -148,7 +183,7 @@ export default function HabitsPage() {
               28 Days
             </button>
           </div>
-          <Button onClick={() => setModalOpen(true)}>
+          <Button onClick={openCreateModal}>
             <Plus className="h-4 w-4" />
             New Habit
           </Button>
@@ -281,6 +316,13 @@ export default function HabitsPage() {
                       </Button>
                       <div className="flex items-center gap-1 justify-center">
                         <button
+                          onClick={() => openEditModal(habit)}
+                          className="p-1 text-[var(--text-muted)] hover:text-[var(--accent)] cursor-pointer"
+                          title="Edit habit"
+                        >
+                          <Edit3 className="h-3.5 w-3.5" />
+                        </button>
+                        <button
                           onClick={() =>
                             updateHabit(habit.id, {
                               status: "paused",
@@ -291,6 +333,13 @@ export default function HabitsPage() {
                           title="Pause habit"
                         >
                           <Pause className="h-3.5 w-3.5" />
+                        </button>
+                        <button
+                          onClick={() => updateHabit(habit.id, { status: "archived" })}
+                          className="p-1 text-[var(--text-muted)] hover:text-[var(--text-primary)] cursor-pointer"
+                          title="Archive habit"
+                        >
+                          <Archive className="h-3.5 w-3.5" />
                         </button>
                         <button
                           onClick={() => deleteHabit(habit.id)}
@@ -341,14 +390,14 @@ export default function HabitsPage() {
         </Card>
       )}
 
-      {/* Create Habit Modal */}
+      {/* Create / Edit Habit Modal */}
       <Modal
         open={modalOpen}
         onClose={() => setModalOpen(false)}
-        title="Create New Habit"
+        title={editingHabit ? "Edit Habit" : "Create New Habit"}
         description="Anchor a sustainable routine to one of your life areas."
       >
-        <form onSubmit={handleCreate} className="space-y-4">
+        <form onSubmit={handleSave} className="space-y-4">
           <div>
             <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1">
               Habit Name

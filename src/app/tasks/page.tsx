@@ -1,10 +1,12 @@
 "use client";
 
 import React, { useMemo, useState } from "react";
-import { addDays, eachDayOfInterval, endOfMonth, format, startOfMonth } from "date-fns";
+import { addDays, addMonths, eachDayOfInterval, endOfMonth, format, startOfMonth, subMonths } from "date-fns";
 import {
   Calendar,
   CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
   Circle,
   Columns3,
   Edit3,
@@ -40,12 +42,14 @@ export default function TasksPage() {
     toggleTaskComplete,
     deleteTask,
     bulkUpdateTasks,
+    bulkDeleteTasks,
     setQuickCaptureOpen,
     showToast,
   } = useOS();
 
   const today = todayISO();
   const [view, setView] = useState<ViewMode>("list");
+  const [calendarMonth, setCalendarMonth] = useState<Date>(() => new Date());
   const [smartFilter, setSmartFilter] = useState<SmartFilter>("all");
   const [search, setSearch] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("all");
@@ -163,9 +167,11 @@ export default function TasksPage() {
   };
 
   const monthDays = useMemo(() => {
-    const now = new Date();
-    return eachDayOfInterval({ start: startOfMonth(now), end: endOfMonth(now) });
-  }, []);
+    return eachDayOfInterval({
+      start: startOfMonth(calendarMonth),
+      end: endOfMonth(calendarMonth),
+    });
+  }, [calendarMonth]);
 
   const KANBAN_COLS: Array<{ id: TaskStatus; label: string }> = [
     { id: "todo", label: "To Do" },
@@ -322,6 +328,16 @@ export default function TasksPage() {
               }}
             >
               Set High Priority
+            </Button>
+            <Button
+              size="xs"
+              variant="danger"
+              onClick={() => {
+                bulkDeleteTasks(selectedIds);
+                setSelectedIds([]);
+              }}
+            >
+              Delete Selected
             </Button>
             <Button
               size="xs"
@@ -490,7 +506,25 @@ export default function TasksPage() {
       {view === "calendar" && (
         <Card className="p-4">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="text-sm font-semibold">{format(new Date(), "MMMM yyyy")}</h3>
+            <div className="flex items-center gap-2">
+              <Button
+                size="xs"
+                variant="outline"
+                onClick={() => setCalendarMonth((m) => subMonths(m, 1))}
+              >
+                <ChevronLeft className="h-3.5 w-3.5" />
+              </Button>
+              <h3 className="text-sm font-semibold w-36 text-center">
+                {format(calendarMonth, "MMMM yyyy")}
+              </h3>
+              <Button
+                size="xs"
+                variant="outline"
+                onClick={() => setCalendarMonth((m) => addMonths(m, 1))}
+              >
+                <ChevronRight className="h-3.5 w-3.5" />
+              </Button>
+            </div>
             <span className="text-xs text-[var(--text-secondary)]">
               Showing tasks by due date
             </span>
@@ -672,6 +706,32 @@ export default function TasksPage() {
                 <option value="weekly">Weekly</option>
                 <option value="monthly">Monthly</option>
               </Select>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1">
+                Project (Optional)
+              </label>
+              <Select value={formProjectId} onChange={(e) => setFormProjectId(e.target.value)}>
+                <option value="">None</option>
+                {data.projects.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.title}
+                  </option>
+                ))}
+              </Select>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1">
+                Notes
+              </label>
+              <Input
+                value={formNotes}
+                onChange={(e) => setFormNotes(e.target.value)}
+                placeholder="Links, reminders, or extra context..."
+              />
             </div>
           </div>
 

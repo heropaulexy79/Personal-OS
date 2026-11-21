@@ -3,7 +3,9 @@
 import React, { useEffect, useState } from "react";
 import {
   AlertTriangle,
+  Bell,
   Download,
+  LogOut,
   RotateCcw,
   Save,
   Shield,
@@ -41,6 +43,7 @@ export default function SettingsPage() {
     exportAllData,
     resetDemoData,
     wipeWorkspaceData,
+    logout,
     showToast,
   } = useOS();
 
@@ -49,6 +52,12 @@ export default function SettingsPage() {
   const [prefs, setPrefs] = useState<UserPreferences>(data.preferences);
   const [aiStatus, setAiStatus] = useState<AIStatusInfo | null>(null);
   const [confirmWipe, setConfirmWipe] = useState(false);
+
+  useEffect(() => {
+    setName(data.profile.name);
+    setRole(data.profile.role || "");
+    setPrefs(data.preferences);
+  }, [data.profile.name, data.profile.role, data.preferences]);
 
   useEffect(() => {
     fetch("/api/ai/status")
@@ -349,6 +358,47 @@ export default function SettingsPage() {
           </CardContent>
         </Card>
 
+        {/* Notification Preferences */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Bell className="h-4 w-4 text-[var(--accent)]" />
+              Notifications & Reminders
+            </CardTitle>
+            <CardDescription>Control in-app planning and habit rhythm reminders</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <label className="flex items-center justify-between gap-3 rounded-xl border border-[var(--border)] bg-[var(--bg)]/50 px-4 py-3 cursor-pointer">
+              <div>
+                <p className="text-xs font-semibold">Daily Planning & Review Prompts</p>
+                <p className="text-[11px] text-[var(--text-secondary)]">
+                  Remind me to review priorities and close out the week on {prefs.weeklyReviewDay}
+                </p>
+              </div>
+              <input
+                type="checkbox"
+                checked={prefs.notificationsEnabled}
+                onChange={(e) => setPrefs({ ...prefs, notificationsEnabled: e.target.checked })}
+                className="h-4 w-4 accent-[var(--accent)]"
+              />
+            </label>
+            <label className="flex items-center justify-between gap-3 rounded-xl border border-[var(--border)] bg-[var(--bg)]/50 px-4 py-3 cursor-pointer">
+              <div>
+                <p className="text-xs font-semibold">Habit Rhythm Reminders</p>
+                <p className="text-[11px] text-[var(--text-secondary)]">
+                  Surface gentle &ldquo;Resume Your Rhythm&rdquo; nudges after missed routines
+                </p>
+              </div>
+              <input
+                type="checkbox"
+                checked={prefs.habitRemindersEnabled}
+                onChange={(e) => setPrefs({ ...prefs, habitRemindersEnabled: e.target.checked })}
+                className="h-4 w-4 accent-[var(--accent)]"
+              />
+            </label>
+          </CardContent>
+        </Card>
+
         <div className="flex justify-end">
           <Button type="submit" size="lg">
             <Save className="h-4 w-4" />
@@ -368,7 +418,7 @@ export default function SettingsPage() {
             {isDemo
               ? "Currently running in isolated Demo Mode (stored locally in your browser)"
               : firebaseReady
-              ? "Synced privately to Cloud Firestore under your authenticated UID"
+              ? `Signed in as ${data.profile.email} — synced privately to Cloud Firestore`
               : "Local session"}
           </CardDescription>
         </CardHeader>
@@ -384,6 +434,10 @@ export default function SettingsPage() {
                 Reset Demo Sample Data
               </Button>
             )}
+            <Button variant="outline" onClick={() => void logout()}>
+              <LogOut className="h-4 w-4" />
+              {isDemo ? "Exit Demo Mode" : "Sign Out"}
+            </Button>
           </div>
 
           <div className="pt-4 border-t border-[var(--border)]">

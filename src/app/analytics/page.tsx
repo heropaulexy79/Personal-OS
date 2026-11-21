@@ -146,6 +146,65 @@ export default function AnalyticsPage() {
       ? Math.round(dailyTrend.reduce((a, b) => a + b.score, 0) / dailyTrend.length)
       : 0;
 
+  // Weekly Comparison: This 7 days vs Previous 7 days (real stored data)
+  const weeklyComparison = useMemo(() => {
+    const thisWeekDates = new Set(
+      Array.from({ length: 7 }, (_, i) => format(subDays(new Date(), i), "yyyy-MM-dd"))
+    );
+    const prevWeekDates = new Set(
+      Array.from({ length: 7 }, (_, i) => format(subDays(new Date(), i + 7), "yyyy-MM-dd"))
+    );
+
+    const thisFocus = Number(
+      (
+        data.focusSessions
+          .filter((s) => thisWeekDates.has(s.date))
+          .reduce((a, b) => a + b.actualMinutes, 0) / 60
+      ).toFixed(1)
+    );
+    const prevFocus = Number(
+      (
+        data.focusSessions
+          .filter((s) => prevWeekDates.has(s.date))
+          .reduce((a, b) => a + b.actualMinutes, 0) / 60
+      ).toFixed(1)
+    );
+
+    const thisTasks = data.tasks.filter(
+      (t) => t.status === "done" && t.completedAt && thisWeekDates.has(t.completedAt.slice(0, 10))
+    ).length;
+    const prevTasks = data.tasks.filter(
+      (t) => t.status === "done" && t.completedAt && prevWeekDates.has(t.completedAt.slice(0, 10))
+    ).length;
+
+    const activeCount = Math.max(data.habits.filter((h) => h.status === "active").length, 1);
+    const thisHabitPct = Math.min(
+      100,
+      Math.round(
+        (data.habitEntries.filter((e) => e.completed && thisWeekDates.has(e.date)).length /
+          (activeCount * 7)) *
+          100
+      )
+    );
+    const prevHabitPct = Math.min(
+      100,
+      Math.round(
+        (data.habitEntries.filter((e) => e.completed && prevWeekDates.has(e.date)).length /
+          (activeCount * 7)) *
+          100
+      )
+    );
+
+    return {
+      thisFocus,
+      focusDelta: Number((thisFocus - prevFocus).toFixed(1)),
+      thisTasks,
+      tasksDelta: thisTasks - prevTasks,
+      thisHabitPct,
+      habitDelta: thisHabitPct - prevHabitPct,
+    };
+  }, [data.focusSessions, data.tasks, data.habits, data.habitEntries]);
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
@@ -186,24 +245,44 @@ export default function AnalyticsPage() {
           <p className="text-[11px] text-[var(--text-muted)] mt-0.5">Last {windowDays} days</p>
         </Card>
         <Card className="p-4">
-          <p className="text-xs text-[var(--text-secondary)]">Deep Focus Logged</p>
-          <p className="mt-2 text-2xl font-semibold tabular-nums">{totalFocusHours}h</p>
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-xs text-[var(--text-secondary)]">Focus (Last 7d)</p>
+            <Badge tone={weeklyComparison.focusDelta >= 0 ? "success" : "warning"}>
+              {weeklyComparison.focusDelta >= 0 ? "+" : ""}
+              {weeklyComparison.focusDelta}h vs prev
+            </Badge>
+          </div>
+          <p className="mt-2 text-2xl font-semibold tabular-nums">{weeklyComparison.thisFocus}h</p>
           <p className="text-[11px] text-[var(--text-muted)] mt-0.5">
-            {data.focusSessions.length} sessions total
+            {totalFocusHours}h total ({data.focusSessions.length} sessions)
           </p>
         </Card>
         <Card className="p-4">
-          <p className="text-xs text-[var(--text-secondary)]">Task Completion Rate</p>
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-xs text-[var(--text-secondary)]">Tasks Completed</p>
+            <Badge tone={weeklyComparison.tasksDelta >= 0 ? "success" : "warning"}>
+              {weeklyComparison.tasksDelta >= 0 ? "+" : ""}
+              {weeklyComparison.tasksDelta} vs prev
+            </Badge>
+          </div>
           <p className="mt-2 text-2xl font-semibold tabular-nums">{completionRate}%</p>
           <p className="text-[11px] text-[var(--text-muted)] mt-0.5">
-            {completedTasks} of {data.tasks.length} tasks
+            {completedTasks} of {data.tasks.length} tasks ({weeklyComparison.thisTasks} this wk)
           </p>
         </Card>
         <Card className="p-4">
-          <p className="text-xs text-[var(--text-secondary)]">14-Day Habit Rhythm</p>
-          <p className="mt-2 text-2xl font-semibold tabular-nums">{avgHabitConsistency}%</p>
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-xs text-[var(--text-secondary)]">Habit Rhythm (7d)</p>
+            <Badge tone={weeklyComparison.habitDelta >= 0 ? "success" : "warning"}>
+              {weeklyComparison.habitDelta >= 0 ? "+" : ""}
+              {weeklyComparison.habitDelta}% vs prev
+            </Badge>
+          </div>
+          <p className="mt-2 text-2xl font-semibold tabular-nums">
+            {weeklyComparison.thisHabitPct}%
+          </p>
           <p className="text-[11px] text-[var(--text-muted)] mt-0.5">
-            Across {habitStats.length} active habits
+            14-day avg: {avgHabitConsistency}% ({habitStats.length} active)
           </p>
         </Card>
       </div>

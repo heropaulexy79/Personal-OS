@@ -1,6 +1,7 @@
 "use client";
 
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { addDays, addMonths, format, parseISO } from "date-fns";
 import {
   createUserWithEmailAndPassword,
   GoogleAuthProvider,
@@ -88,6 +89,7 @@ interface OSContextValue {
   toggleTaskComplete: (id: string) => void;
   deleteTask: (id: string) => void;
   bulkUpdateTasks: (ids: string[], patch: Partial<Task>) => void;
+  bulkDeleteTasks: (ids: string[]) => void;
 
   createHabit: (habit: Omit<Habit, "id" | "userId" | "createdAt">) => Habit;
   updateHabit: (id: string, patch: Partial<Habit>) => void;
@@ -109,8 +111,10 @@ interface OSContextValue {
 
   saveWeeklyReview: (review: Omit<WeeklyReview, "id" | "userId" | "createdAt" | "updatedAt">) => WeeklyReview;
   updateWeeklyReview: (id: string, patch: Partial<WeeklyReview>) => void;
+  deleteWeeklyReview: (id: string) => void;
 
   saveConversation: (conv: AIConversation) => void;
+  deleteConversation: (id: string) => void;
   applyProposedAction: (action: AIProposedAction) => void;
 
   updatePreferences: (patch: Partial<UserPreferences>) => void;
@@ -244,6 +248,16 @@ export function OSProvider({ children }: { children: React.ReactNode }) {
 
   const activeUserId = user?.uid || "demo_user";
   const shouldSyncFirestore = Boolean(user && !isDemo && isFirebaseConfigured);
+
+  const persistSafe = useCallback(
+    (op: Promise<void>) => {
+      op.catch((err) => {
+        console.error("Firestore sync failed:", err);
+        showToast("Cloud sync error — check Firestore rules or connection", "error");
+      });
+    },
+    [showToast]
+  );
 
   const enterDemoMode = useCallback(() => {
     localStorage.setItem(DEMO_MODE_FLAG, "true");
@@ -388,15 +402,21 @@ export function OSProvider({ children }: { children: React.ReactNode }) {
 
   const deleteGoal = useCallback(
     (id: string) => {
-      setData((prev) => ({
-        ...prev,
-        goals: prev.goals.filter((g) => g.id !== id),
-        milestones: prev.milestones.filter((m) => m.goalId !== id),
-      }));
-      if (shouldSyncFirestore) void removeDocument("goals", id);
+      setData((prev) => {
+        const orphanMilestones = prev.milestones.filter((m) => m.goalId === id);
+        if (shouldSyncFirestore) {
+          persistSafe(removeDocument("goals", id));
+          orphanMilestones.forEach((m) => persistSafe(removeDocument("milestones", m.id)));
+        }
+        return {
+          ...prev,
+          goals: prev.goals.filter((g) => g.id !== id),
+          milestones: prev.milestones.filter((m) => m.goalId !== id),
+        };
+      });
       showToast("Goal deleted");
     },
-    [shouldSyncFirestore, showToast]
+    [shouldSyncFirestore, persistSafe, showToast]
   );
 
   // ---- Milestones ----
@@ -507,23 +527,62 @@ export function OSProvider({ children }: { children: React.ReactNode }) {
 
   const toggleTaskComplete = useCallback(
     (id: string) => {
+      let spawnedTitle: string | null = null;
       setData((prev) => {
+        let nextOccurrence: Task | null = null;
         const tasks = prev.tasks.map((t) => {
           if (t.id !== id) return t;
           const nextDone = t.status !== "done";
+          const nowIso = new Date().toISOString();
           const updated: Task = {
             ...t,
             status: nextDone ? "done" : "todo",
-            completedAt: nextDone ? new Date().toISOString() : undefined,
-            updatedAt: new Date().toISOString(),
+            completedAt: nextDone ? nowIso : undefined,
+            updatedAt: nowIso,
           };
-          if (shouldSyncFirestore) void upsertDocument("tasks", updated);
+          if (shouldSyncFirestore) persistSafe(upsertDocument("tasks", updated));
+
+          if (nextDone && t.recurrence && t.recurrence !== "none") {
+            const base = t.dueDate ? parseISO(t.dueDate) : new Date();
+            let nextDate = addDays(base, 1);
+            if (t.recurrence === "weekdays") {
+              nextDate = addDays(base, 1);
+              while (nextDate.getDay() === 0 || nextDate.getDay() === 6) {
+                nextDate = addDays(nextDate, 1);
+              }
+            } else if (t.recurrence === "weekly") {
+              nextDate = addDays(base, 7);
+            } else if (t.recurrence === "monthly") {
+              nextDate = addMonths(base, 1);
+            }
+            const nextIsoDate = format(nextDate, "yyyy-MM-dd");
+            nextOccurrence = {
+              ...t,
+              id: uid("task"),
+              status: "todo",
+              dueDate: nextIsoDate,
+              scheduledDate: nextIsoDate,
+              actualMinutes: 0,
+              completedAt: undefined,
+              subtasks: t.subtasks.map((s) => ({ ...s, completed: false })),
+              createdAt: nowIso,
+              updatedAt: nowIso,
+            };
+            spawnedTitle = `${t.title} (${nextIsoDate})`;
+            if (shouldSyncFirestore) persistSafe(upsertDocument("tasks", nextOccurrence));
+          }
           return updated;
         });
-        return { ...prev, tasks };
+        return {
+          ...prev,
+          tasks: nextOccurrence ? [nextOccurrence, ...tasks] : tasks,
+        };
       });
+      if (spawnedTitle) {
+        showToast(`Next recurring task scheduled: ${spawnedTitle}`, "success");
+      }
     },
-    [shouldSyncFirestore]
+    [shouldSyncFirestore, persistSafe, showToast]
   );
 
   const deleteTask = useCallback(
@@ -532,9 +591,9 @@ export function OSProvider({ children }: { children: React.ReactNode }) {
         ...prev,
         tasks: prev.tasks.filter((t) => t.id !== id),
       }));
-      if (shouldSyncFirestore) void removeDocument("tasks", id);
+      if (shouldSyncFirestore) persistSafe(removeDocument("tasks", id));
     },
-    [shouldSyncFirestore]
+    [shouldSyncFirestore, persistSafe]
   );
 
   const bulkUpdateTasks = useCallback(
@@ -554,14 +613,29 @@ export function OSProvider({ children }: { children: React.ReactNode }) {
                 : t.completedAt,
             updatedAt: new Date().toISOString(),
           };
-          if (shouldSyncFirestore) void upsertDocument("tasks", updated);
+          if (shouldSyncFirestore) persistSafe(upsertDocument("tasks", updated));
           return updated;
         });
         return { ...prev, tasks };
       });
       showToast(`Updated ${ids.length} tasks`, "success");
     },
-    [shouldSyncFirestore, showToast]
+    [shouldSyncFirestore, persistSafe, showToast]
+  );
+
+  const bulkDeleteTasks = useCallback(
+    (ids: string[]) => {
+      const idSet = new Set(ids);
+      setData((prev) => ({
+        ...prev,
+        tasks: prev.tasks.filter((t) => !idSet.has(t.id)),
+      }));
+      if (shouldSyncFirestore) {
+        ids.forEach((id) => persistSafe(removeDocument("tasks", id)));
+      }
+      showToast(`Deleted ${ids.length} task(s)`);
+    },
+    [shouldSyncFirestore, persistSafe, showToast]
   );
 
   // ---- Habits ----
@@ -598,14 +672,21 @@ export function OSProvider({ children }: { children: React.ReactNode }) {
 
   const deleteHabit = useCallback(
     (id: string) => {
-      setData((prev) => ({
-        ...prev,
-        habits: prev.habits.filter((h) => h.id !== id),
-        habitEntries: prev.habitEntries.filter((e) => e.habitId !== id),
-      }));
-      if (shouldSyncFirestore) void removeDocument("habits", id);
+      setData((prev) => {
+        const orphanEntries = prev.habitEntries.filter((e) => e.habitId === id);
+        if (shouldSyncFirestore) {
+          persistSafe(removeDocument("habits", id));
+          orphanEntries.forEach((e) => persistSafe(removeDocument("habitEntries", e.id)));
+        }
+        return {
+          ...prev,
+          habits: prev.habits.filter((h) => h.id !== id),
+          habitEntries: prev.habitEntries.filter((e) => e.habitId !== id),
+        };
+      });
+      showToast("Habit deleted");
     },
-    [shouldSyncFirestore]
+    [shouldSyncFirestore, persistSafe, showToast]
   );
 
   const toggleHabitEntry = useCallback(
@@ -842,13 +923,26 @@ export function OSProvider({ children }: { children: React.ReactNode }) {
         const weeklyReviews = prev.weeklyReviews.map((w) => {
           if (w.id !== id) return w;
           const updated = { ...w, ...patch, updatedAt: new Date().toISOString() };
-          if (shouldSyncFirestore) void upsertDocument("weeklyReviews", updated);
+          if (shouldSyncFirestore) persistSafe(upsertDocument("weeklyReviews", updated));
           return updated;
         });
         return { ...prev, weeklyReviews };
       });
+      showToast("Weekly review updated", "success");
     },
-    [shouldSyncFirestore]
+    [shouldSyncFirestore, persistSafe, showToast]
+  );
+
+  const deleteWeeklyReview = useCallback(
+    (id: string) => {
+      setData((prev) => ({
+        ...prev,
+        weeklyReviews: prev.weeklyReviews.filter((w) => w.id !== id),
+      }));
+      if (shouldSyncFirestore) persistSafe(removeDocument("weeklyReviews", id));
+      showToast("Weekly review deleted");
+    },
+    [shouldSyncFirestore, persistSafe, showToast]
   );
 
   // ---- AI Conversations & Approved Actions ----
@@ -861,9 +955,20 @@ export function OSProvider({ children }: { children: React.ReactNode }) {
           : [conv, ...prev.aiConversations];
         return { ...prev, aiConversations };
       });
-      if (shouldSyncFirestore) void upsertDocument("aiConversations", conv);
+      if (shouldSyncFirestore) persistSafe(upsertDocument("aiConversations", conv));
     },
-    [shouldSyncFirestore]
+    [shouldSyncFirestore, persistSafe]
+  );
+
+  const deleteConversation = useCallback(
+    (id: string) => {
+      setData((prev) => ({
+        ...prev,
+        aiConversations: prev.aiConversations.filter((c) => c.id !== id),
+      }));
+      if (shouldSyncFirestore) persistSafe(removeDocument("aiConversations", id));
+    },
+    [shouldSyncFirestore, persistSafe]
   );
 
   const applyProposedAction = useCallback(
@@ -1006,6 +1111,7 @@ export function OSProvider({ children }: { children: React.ReactNode }) {
       toggleTaskComplete,
       deleteTask,
       bulkUpdateTasks,
+      bulkDeleteTasks,
       createHabit,
       updateHabit,
       deleteHabit,
@@ -1022,7 +1128,9 @@ export function OSProvider({ children }: { children: React.ReactNode }) {
       deleteJournalEntry,
       saveWeeklyReview,
       updateWeeklyReview,
+      deleteWeeklyReview,
       saveConversation,
+      deleteConversation,
       applyProposedAction,
       updatePreferences,
       updateProfile,
@@ -1061,6 +1169,7 @@ export function OSProvider({ children }: { children: React.ReactNode }) {
       toggleTaskComplete,
       deleteTask,
       bulkUpdateTasks,
+      bulkDeleteTasks,
       createHabit,
       updateHabit,
       deleteHabit,
@@ -1077,7 +1186,9 @@ export function OSProvider({ children }: { children: React.ReactNode }) {
       deleteJournalEntry,
       saveWeeklyReview,
       updateWeeklyReview,
+      deleteWeeklyReview,
       saveConversation,
+      deleteConversation,
       applyProposedAction,
       updatePreferences,
       updateProfile,

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { Compass, Plus, Save, Sparkles, Trash2, X } from "lucide-react";
 import { useOS } from "@/context/OSContext";
@@ -38,6 +38,12 @@ export default function VisionPage() {
   const [statement, setStatement] = useState(vision.statement);
   const [horizonYears, setHorizonYears] = useState(vision.horizonYears);
   const [newValue, setNewValue] = useState("");
+
+  useEffect(() => {
+    setNorthStar(vision.northStar);
+    setStatement(vision.statement);
+    setHorizonYears(vision.horizonYears);
+  }, [vision.id, vision.updatedAt, vision.northStar, vision.statement, vision.horizonYears]);
 
   const [areaModalOpen, setAreaModalOpen] = useState(false);
   const [areaName, setAreaName] = useState("");

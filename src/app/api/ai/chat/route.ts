@@ -52,6 +52,20 @@ const ChatSchema = z.object({
     focusMinutesLast7Days: z.number(),
     recentJournalTitles: z.array(z.string()),
     maxDailyWorkloadHours: z.number(),
+    projects: z
+      .array(z.object({ id: z.string(), title: z.string(), category: z.string() }))
+      .optional(),
+    todayTimeBlocks: z
+      .array(
+        z.object({
+          title: z.string(),
+          startTime: z.string(),
+          endTime: z.string(),
+          type: z.string(),
+          completed: z.boolean(),
+        })
+      )
+      .optional(),
   }),
 });
 

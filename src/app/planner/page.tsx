@@ -18,7 +18,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { useOS } from "@/context/OSContext";
-import { formatMinutes, timeToMinutes, todayISO } from "@/lib/utils";
+import { formatMinutes, minutesToTime, timeToMinutes, todayISO } from "@/lib/utils";
 import {
   Badge,
   Button,
@@ -32,7 +32,7 @@ import {
   PriorityBadge,
   Select,
 } from "@/components/ui/primitives";
-import type { TimeBlock } from "@/types";
+import type { Priority, TimeBlock } from "@/types";
 
 interface ProposedBlock {
   title: string;
@@ -53,6 +53,7 @@ interface DeferredItem {
 export default function DailyPlannerPage() {
   const {
     data,
+    createTask,
     toggleTaskComplete,
     updateTask,
     upsertDailyPlan,
@@ -65,6 +66,11 @@ export default function DailyPlannerPage() {
 
   const [selectedDate, setSelectedDate] = useState(todayISO());
   const [viewMode, setViewMode] = useState<"timeline" | "list">("timeline");
+
+  // Quick-add task for selected date
+  const [quickTaskTitle, setQuickTaskTitle] = useState("");
+  const [quickTaskPriority, setQuickTaskPriority] = useState<Priority>("medium");
+  const [quickTaskMins, setQuickTaskMins] = useState(45);
 
   // Manual block modal
   const [blockModalOpen, setBlockModalOpen] = useState(false);
@@ -366,55 +372,121 @@ export default function DailyPlannerPage() {
                   Click &ldquo;Plan My Day with AI&rdquo; to generate a balanced, non-overlapping schedule.
                 </p>
               </div>
+            ) : viewMode === "timeline" ? (
+              /* Visual Hourly Calendar Timeline (06:00 - 21:00) */
+              <div className="relative rounded-xl border border-[var(--border)] bg-[var(--bg)]/40 overflow-hidden">
+                {Array.from({ length: 16 }, (_, idx) => {
+                  const hour = 6 + idx;
+                  const hourLabel = `${String(hour).padStart(2, "0")}:00`;
+                  const slotBlocks = dayBlocks.filter((b) => {
+                    const startHour = Math.floor(timeToMinutes(b.startTime) / 60);
+                    return startHour === hour || (idx === 0 && startHour < 6) || (idx === 15 && startHour > 21);
+                  });
+                  return (
+                    <div
+                      key={hour}
+                      className="flex border-b border-[var(--border)]/70 last:border-b-0 min-h-[54px]"
+                    >
+                      <div className="w-14 shrink-0 px-2 py-2 text-[11px] font-mono text-[var(--text-muted)] border-r border-[var(--border)]/70 text-right tabular-nums">
+                        {hourLabel}
+                      </div>
+                      <div className="flex-1 p-1.5 space-y-1.5">
+                        {slotBlocks.map((block) => (
+                          <div
+                            key={block.id}
+                            className={`rounded-lg border border-[var(--border)] border-l-4 px-3 py-2 transition-all ${blockTypeStyles[block.type]}`}
+                          >
+                            <div className="flex items-start justify-between gap-2">
+                              <button
+                                onClick={() =>
+                                  updateTimeBlock(block.id, { completed: !block.completed })
+                                }
+                                className="flex items-start gap-2 text-left flex-1 cursor-pointer"
+                              >
+                                {block.completed ? (
+                                  <CheckCircle2 className="h-3.5 w-3.5 text-[var(--success)] mt-0.5 shrink-0" />
+                                ) : (
+                                  <Circle className="h-3.5 w-3.5 text-[var(--text-muted)] mt-0.5 shrink-0" />
+                                )}
+                                <div className="min-w-0">
+                                  <div className="flex items-center gap-1.5 flex-wrap">
+                                    <span className="text-[11px] font-mono text-[var(--text-secondary)] tabular-nums">
+                                      {block.startTime}–{block.endTime}
+                                    </span>
+                                    <Badge tone="neutral">{block.type}</Badge>
+                                    {block.isFixed && <Badge tone="warning">Fixed</Badge>}
+                                  </div>
+                                  <p
+                                    className={`text-xs font-medium mt-0.5 ${
+                                      block.completed
+                                        ? "line-through text-[var(--text-muted)]"
+                                        : ""
+                                    }`}
+                                  >
+                                    {block.title}
+                                  </p>
+                                  {block.rationale && (
+                                    <p className="text-[11px] text-[var(--text-secondary)] mt-0.5">
+                                      {block.rationale}
+                                    </p>
+                                  )}
+                                </div>
+                              </button>
+                              <button
+                                onClick={() => deleteTimeBlock(block.id)}
+                                className="p-1 text-[var(--text-muted)] hover:text-[var(--danger)] cursor-pointer shrink-0"
+                                title="Delete time block"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             ) : (
-              dayBlocks.map((block) => (
-                <div
-                  key={block.id}
-                  className={`rounded-xl border border-[var(--border)] border-l-4 p-3.5 transition-all ${blockTypeStyles[block.type]}`}
-                >
-                  <div className="flex items-start justify-between gap-3">
+              /* Compact List Mode */
+              <div className="divide-y divide-[var(--border)] rounded-xl border border-[var(--border)] overflow-hidden">
+                {dayBlocks.map((block) => (
+                  <div
+                    key={block.id}
+                    className="flex items-center justify-between gap-3 px-3.5 py-2.5 bg-[var(--surface)] hover:bg-[var(--surface-subtle)]/50"
+                  >
                     <button
                       onClick={() => updateTimeBlock(block.id, { completed: !block.completed })}
-                      className="flex items-start gap-2.5 text-left flex-1 cursor-pointer"
+                      className="flex items-center gap-2.5 text-left flex-1 min-w-0 cursor-pointer"
                     >
                       {block.completed ? (
-                        <CheckCircle2 className="h-4 w-4 text-[var(--success)] mt-0.5 shrink-0" />
+                        <CheckCircle2 className="h-4 w-4 text-[var(--success)] shrink-0" />
                       ) : (
-                        <Circle className="h-4 w-4 text-[var(--text-muted)] mt-0.5 shrink-0" />
+                        <Circle className="h-4 w-4 text-[var(--text-muted)] shrink-0" />
                       )}
-                      <div>
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className="text-xs font-mono font-medium text-[var(--text-secondary)] tabular-nums">
-                            {block.startTime} – {block.endTime}
-                          </span>
-                          <Badge tone="neutral">{block.type}</Badge>
-                          {block.isFixed && <Badge tone="warning">Fixed</Badge>}
-                        </div>
-                        <p
-                          className={`mt-1 text-sm font-medium ${
-                            block.completed ? "line-through text-[var(--text-muted)]" : ""
-                          }`}
-                        >
-                          {block.title}
-                        </p>
-                        {block.rationale && (
-                          <p className="mt-0.5 text-xs text-[var(--text-secondary)]">
-                            {block.rationale}
-                          </p>
-                        )}
-                      </div>
+                      <span className="text-xs font-mono text-[var(--text-secondary)] tabular-nums w-24 shrink-0">
+                        {block.startTime}–{block.endTime}
+                      </span>
+                      <span
+                        className={`text-xs font-medium truncate ${
+                          block.completed ? "line-through text-[var(--text-muted)]" : ""
+                        }`}
+                      >
+                        {block.title}
+                      </span>
                     </button>
-
-                    <button
-                      onClick={() => deleteTimeBlock(block.id)}
-                      className="p-1 text-[var(--text-muted)] hover:text-[var(--danger)] cursor-pointer"
-                      title="Delete time block"
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </button>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <Badge tone="neutral">{block.type}</Badge>
+                      <button
+                        onClick={() => deleteTimeBlock(block.id)}
+                        className="p-1 text-[var(--text-muted)] hover:text-[var(--danger)] cursor-pointer"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
                   </div>
-                </div>
-              ))
+                ))}
+              </div>
             )}
           </CardContent>
         </Card>
@@ -444,9 +516,64 @@ export default function DailyPlannerPage() {
               </Button>
             )}
           </CardHeader>
-          <CardContent className="space-y-2">
+          <CardContent className="space-y-3">
+            {/* Inline Quick-Add Task for Selected Date */}
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (!quickTaskTitle.trim()) return;
+                createTask({
+                  title: quickTaskTitle.trim(),
+                  status: "todo",
+                  priority: quickTaskPriority,
+                  dueDate: selectedDate,
+                  scheduledDate: selectedDate,
+                  estimatedMinutes: Number(quickTaskMins) || 45,
+                  actualMinutes: 0,
+                  category: data.vision.lifeAreas[0]?.name || "Personal Development",
+                  recurrence: "none",
+                  subtasks: [],
+                });
+                setQuickTaskTitle("");
+                showToast("Task added to this day", "success");
+              }}
+              className="rounded-xl border border-[var(--border)] bg-[var(--bg)]/60 p-2.5 space-y-2"
+            >
+              <Input
+                value={quickTaskTitle}
+                onChange={(e) => setQuickTaskTitle(e.target.value)}
+                placeholder={`Add a task for ${format(parseISO(selectedDate), "MMM d")}...`}
+                className="h-8 text-xs"
+              />
+              <div className="flex items-center gap-2">
+                <Select
+                  value={quickTaskPriority}
+                  onChange={(e) => setQuickTaskPriority(e.target.value as Priority)}
+                  className="h-7 text-xs flex-1"
+                >
+                  <option value="urgent">Urgent</option>
+                  <option value="high">High</option>
+                  <option value="medium">Medium</option>
+                  <option value="low">Low</option>
+                </Select>
+                <Input
+                  type="number"
+                  min={10}
+                  max={240}
+                  value={quickTaskMins}
+                  onChange={(e) => setQuickTaskMins(Number(e.target.value) || 30)}
+                  className="h-7 w-20 text-xs"
+                  title="Estimated minutes"
+                />
+                <Button type="submit" size="xs">
+                  <Plus className="h-3 w-3" />
+                  Add
+                </Button>
+              </div>
+            </form>
+
             {dayTasks.length === 0 ? (
-              <p className="text-xs text-[var(--text-secondary)] py-8 text-center">
+              <p className="text-xs text-[var(--text-secondary)] py-6 text-center">
                 No tasks scheduled for this date.
               </p>
             ) : (
@@ -490,9 +617,26 @@ export default function DailyPlannerPage() {
                               }
                               className="text-[11px] text-[var(--accent)] hover:underline cursor-pointer"
                             >
-                              Set as Focus
+                              Set Focus
                             </button>
                           )
+                        )}
+                        {task.status !== "done" && (
+                          <button
+                            onClick={() => {
+                              const startMin = timeToMinutes(data.preferences.workStartHour || "09:00");
+                              const endMin = startMin + Math.max(15, task.estimatedMinutes || 45);
+                              setBlockTaskId(task.id);
+                              setBlockTitle(task.title);
+                              setBlockStart(minutesToTime(startMin));
+                              setBlockEnd(minutesToTime(endMin));
+                              setBlockType("focus");
+                              setBlockModalOpen(true);
+                            }}
+                            className="text-[11px] text-[var(--text-secondary)] hover:text-[var(--accent)] cursor-pointer ml-auto"
+                          >
+                            + Time Block
+                          </button>
                         )}
                       </div>
                     </div>
